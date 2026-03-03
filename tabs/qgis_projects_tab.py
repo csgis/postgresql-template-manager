@@ -2,12 +2,14 @@
 QGIS Projects tab for PostgreSQL Template Manager.
 """
 
-from qgis.PyQt.QtCore import pyqtSignal
+from qgis.PyQt.QtCore import pyqtSignal, Qt
 from qgis.PyQt.QtWidgets import (QVBoxLayout, QHBoxLayout, QFormLayout, 
                                 QComboBox, QLineEdit, QSpinBox, QPushButton, 
                                 QGroupBox, QLabel, QCheckBox, QMessageBox)
 from qgis.PyQt.QtGui import QFont
+from qgis.core import QgsProject, QgsVectorLayer
 from .base_tab import BaseTab
+from ..compat import AlignCenter, EchoPassword, MsgBoxOk, RichText
 
 
 class QGISProjectsTab(BaseTab):
@@ -84,6 +86,22 @@ class QGISProjectsTab(BaseTab):
         params_section = QGroupBox("New Connection Parameters")
         params_layout = QFormLayout(params_section)
         
+        # Service mode
+        self.service_name_edit = QLineEdit()
+        self.service_name_edit.setPlaceholderText("e.g. 'local_dev' — leave empty to use explicit parameters")
+        self.service_name_edit.setToolTip(
+            "Set a pg_service.conf service name. This will replace host, port, "
+            "dbname, user and password with a single service= parameter.\n"
+            "Leave empty to use explicit connection parameters below instead."
+        )
+        params_layout.addRow("<b>Service Name:</b>", self.service_name_edit)
+        
+        # Separator with hint
+        mode_hint = QLabel("— OR set explicit parameters below —")
+        mode_hint.setStyleSheet("color: #888; font-style: italic; font-size: 11px;")
+        mode_hint.setAlignment(AlignCenter)
+        params_layout.addRow(mode_hint)
+        
         self.new_dbname_edit = QLineEdit()
         self.new_host_edit = QLineEdit()
         self.new_user_edit = QLineEdit()
@@ -91,7 +109,7 @@ class QGISProjectsTab(BaseTab):
         self.new_port_edit.setRange(1, 65535)
         self.new_port_edit.setValue(5432)
         self.new_password_edit = QLineEdit()
-        self.new_password_edit.setEchoMode(QLineEdit.Password)
+        self.new_password_edit.setEchoMode(EchoPassword)
         
         # Schema remapping fields
         self.source_schema_edit = QLineEdit()
@@ -110,6 +128,9 @@ class QGISProjectsTab(BaseTab):
         self.source_schema_edit.setToolTip("Original schema name to replace (e.g., 'dogs')")
         self.target_schema_edit.setToolTip("New schema name to use (e.g., 'cats')")
         
+        # Toggle explicit fields enabled/disabled based on service name
+        self.service_name_edit.textChanged.connect(self._on_service_name_changed)
+        
         # Create backup checkbox
         self.create_backup_checkbox = QCheckBox("Create local backup")
         self.create_backup_checkbox.setChecked(True)
@@ -121,31 +142,77 @@ class QGISProjectsTab(BaseTab):
         params_layout.addWidget(self.fix_project_btn)
         
         layout.addWidget(params_section)
+        
+        # Extent reset section
+        extent_section = QGroupBox("Layer Extent Reset")
+        extent_layout = QVBoxLayout(extent_section)
+        
+        extent_info = QLabel(
+            "Recalculate extents for all PostgreSQL layers in the current QGIS project. "
+            "Useful after migrating layers to a different database or fixing connection parameters."
+        )
+        extent_info.setWordWrap(True)
+        extent_info.setStyleSheet("color: #555; font-size: 11px;")
+        extent_layout.addWidget(extent_info)
+        
+        self.reset_extents_btn = QPushButton("Reset PostgreSQL Layer Extents")
+        self.reset_extents_btn.setStyleSheet(
+            "QPushButton { "
+            "background-color: #FF9800; "
+            "color: white; "
+            "font-weight: bold; "
+            "padding: 8px 16px; "
+            "border: none; "
+            "border-radius: 4px; "
+            "} "
+            "QPushButton:hover { background-color: #F57C00; }"
+        )
+        self.reset_extents_btn.clicked.connect(self.reset_postgres_extents)
+        extent_layout.addWidget(self.reset_extents_btn)
+        
+        self.extent_status_label = QLabel("")
+        self.extent_status_label.setStyleSheet("color: #666; font-style: italic;")
+        extent_layout.addWidget(self.extent_status_label)
+        
+        layout.addWidget(extent_section)
 
     def _show_help_popup(self):
         """Show help information in a popup dialog."""
         help_text = (
             "<h3>QGIS Project Layer Updater</h3>"
             "<p>This tool updates PostgreSQL connection parameters in QGIS project files.</p>"
-            "<h4>How it works:</h4>"
+            "<h4>Service Mode:</h4>"
+            "<ul>"
+            "<li><b>Service Name filled:</b> replaces host, port, dbname, user and password "
+            "with a single <code>service='name'</code> parameter</li>"
+            "<li>This references your <code>pg_service.conf</code> file for credentials</li>"
+            "<li>Schema remapping still works alongside service mode</li>"
+            "</ul>"
+            "<h4>Explicit Mode (individual parameters):</h4>"
             "<ul>"
             "<li><b>Empty fields are ignored</b> and won't be changed</li>"
-            "<li><b>Schema remapping:</b> specify 'Source Schema' (old) and 'Target Schema' (new)</li>"
+            "<li>If the layer currently uses a service, it will be replaced with explicit parameters</li>"
+            "</ul>"
+            "<h4>Schema Remapping:</h4>"
+            "<ul>"
             "<li><b>Both schema fields filled:</b> only layers using the source schema will be updated</li>"
             "<li><b>Only 'Target Schema' filled:</b> ALL layers will use this schema</li>"
-            "<li><b>Other parameters</b> (host, user, etc.) apply to all matching layers</li>"
             "</ul>"
             "<h4>Examples:</h4>"
+            "<p><b>Switch to service:</b> Service Name='production' → all layers use service='production'</p>"
             "<p><b>Schema remapping:</b> Source='dogs', Target='cats' → only 'dogs' schema layers become 'cats'</p>"
-            "<p><b>Global schema change:</b> Target='production' → all layers use 'production' schema</p>"
+            "<h4>Layer Extent Reset:</h4>"
+            "<p>After migrating layers to a different database or updating connection parameters, "
+            "layer extents may be stale. Use <b>Reset PostgreSQL Layer Extents</b> to recalculate "
+            "extents and refresh all PostgreSQL layers in the current project.</p>"
         )
         
         msg = QMessageBox(self)
         msg.setWindowTitle("Help - QGIS Project Layer Updater")
-        msg.setTextFormat(1)  # Rich text format
+        msg.setTextFormat(RichText)  # Rich text format
         msg.setText(help_text)
-        msg.setStandardButtons(QMessageBox.Ok)
-        msg.exec_()
+        msg.setStandardButtons(MsgBoxOk)
+        msg.exec()
     
     def connect_signals(self):
         """Connect signals."""
@@ -231,45 +298,70 @@ class QGISProjectsTab(BaseTab):
             selected_db, schema, table, project_name, new_params, create_backup
         )
     
+    def _on_service_name_changed(self, text):
+        """Toggle explicit fields based on service name input."""
+        has_service = bool(text.strip())
+        # Disable explicit connection fields when service name is set
+        for widget in [self.new_dbname_edit, self.new_host_edit, self.new_user_edit,
+                       self.new_port_edit, self.new_password_edit]:
+            widget.setEnabled(not has_service)
+            if has_service:
+                widget.setStyleSheet("background-color: #f0f0f0;")
+            else:
+                widget.setStyleSheet("")
+    
     def _collect_new_parameters(self):
         """Collect new connection parameters from form fields."""
         new_params = {}
         
-        if self.new_dbname_edit.text().strip():
-            new_params['dbname'] = self.new_dbname_edit.text().strip()
-        if self.new_host_edit.text().strip():
-            new_params['host'] = self.new_host_edit.text().strip()
-        if self.new_user_edit.text().strip():
-            new_params['user'] = self.new_user_edit.text().strip()
-        if self.new_port_edit.value() != 5432:
-            new_params['port'] = str(self.new_port_edit.value())
-        if self.new_password_edit.text().strip():
-            new_params['password'] = self.new_password_edit.text().strip()
+        service_name = self.service_name_edit.text().strip()
         
-        # Handle schema remapping logic
+        if service_name:
+            # Service mode: switch to service= connection
+            new_params['__mode__'] = 'service'
+            new_params['service'] = service_name
+            self.emit_log(f"Service mode: switching layers to service='{service_name}'")
+        else:
+            # Explicit mode: update individual parameters
+            new_params['__mode__'] = 'explicit'
+            if self.new_dbname_edit.text().strip():
+                new_params['dbname'] = self.new_dbname_edit.text().strip()
+            if self.new_host_edit.text().strip():
+                new_params['host'] = self.new_host_edit.text().strip()
+            if self.new_user_edit.text().strip():
+                new_params['user'] = self.new_user_edit.text().strip()
+            if self.new_port_edit.value() != 5432:
+                new_params['port'] = str(self.new_port_edit.value())
+            if self.new_password_edit.text().strip():
+                new_params['password'] = self.new_password_edit.text().strip()
+        
+        # Handle schema remapping logic (works in both modes)
         source_schema = self.source_schema_edit.text().strip()
         target_schema = self.target_schema_edit.text().strip()
         
         if source_schema and target_schema:
-            # Both schemas specified - remap from source to target
             new_params['schema_remapping'] = {
                 'source': source_schema,
                 'target': target_schema
             }
             self.emit_log(f"Schema remapping: '{source_schema}' → '{target_schema}'")
         elif target_schema:
-            # Only target schema specified - apply to all layers
             new_params['schema'] = target_schema
             self.emit_log(f"Setting schema to '{target_schema}' for all layers")
         elif source_schema:
-            # Only source schema specified - this is not a valid configuration
             self.show_warning("Target schema is required when source schema is specified.")
+            return {}
+        
+        # Check we have something meaningful to do
+        meaningful_keys = [k for k in new_params if k != '__mode__']
+        if not meaningful_keys:
             return {}
         
         return new_params
     
     def clear_parameters(self):
         """Clear all parameter fields."""
+        self.service_name_edit.clear()
         self.new_dbname_edit.clear()
         self.new_host_edit.clear()
         self.new_user_edit.clear()
@@ -288,3 +380,51 @@ class QGISProjectsTab(BaseTab):
                 self.clear_parameters()
             else:
                 self.emit_log(f"✗ {message}")
+    
+    def reset_postgres_extents(self):
+        """Reset extents for all PostgreSQL layers in the current QGIS project."""
+        project = QgsProject.instance()
+        
+        if not project.fileName():
+            self.show_warning("No QGIS project is currently open.")
+            return
+        
+        pg_layers = []
+        for layer in project.mapLayers().values():
+            if isinstance(layer, QgsVectorLayer) and layer.dataProvider().name() == 'postgres':
+                pg_layers.append(layer)
+        
+        if not pg_layers:
+            self.extent_status_label.setText("No PostgreSQL layers found in the current project.")
+            self.emit_log("No PostgreSQL layers found in the current project.")
+            return
+        
+        self.emit_progress_started()
+        updated_count = 0
+        failed_count = 0
+        
+        for layer in pg_layers:
+            try:
+                layer.updateExtents()
+                layer.triggerRepaint()
+                updated_count += 1
+                self.emit_log(f"Reset extent: {layer.name()}")
+            except Exception as e:
+                failed_count += 1
+                self.emit_log(f"Failed to reset extent for {layer.name()}: {str(e)}")
+        
+        # Refresh the map canvas
+        try:
+            from qgis.utils import iface
+            if iface and iface.mapCanvas():
+                iface.mapCanvas().refreshAllLayers()
+        except Exception:
+            pass
+        
+        status = f"Reset {updated_count} PostgreSQL layer extent(s)"
+        if failed_count > 0:
+            status += f" ({failed_count} failed)"
+        
+        self.extent_status_label.setText(status)
+        self.emit_log(f"✓ {status}")
+        self.emit_progress_finished()

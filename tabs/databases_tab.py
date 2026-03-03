@@ -10,6 +10,7 @@ from qgis.PyQt.QtWidgets import (QVBoxLayout, QHBoxLayout, QFormLayout, QComboBo
                                 QFrame, QSizePolicy, QHeaderView, QRadioButton, QButtonGroup)
 from qgis.PyQt.QtGui import QFont, QPixmap
 from .base_tab import BaseTab
+from ..compat import AlignCenter, DialogAccepted, ItemIsEditable, MsgBoxOk, ResizeToContents, RichText, SelectRows, SingleSelection
 
 
 class DatabaseDeletionDialog(QDialog):
@@ -49,7 +50,7 @@ class DatabaseDeletionDialog(QDialog):
         warning_font.setPointSize(16)
         warning_font.setBold(True)
         warning_label.setFont(warning_font)
-        warning_label.setAlignment(Qt.AlignCenter)
+        warning_label.setAlignment(AlignCenter)
         warning_label.setStyleSheet("color: #d32f2f;")
         warning_layout.addWidget(warning_label)
         
@@ -320,10 +321,10 @@ class DatabasesTab(BaseTab):
         self.databases_table = QTableWidget()
         self.databases_table.setColumnCount(2)
         self.databases_table.setHorizontalHeaderLabels(["Database Name", "Comment"])
-        self.databases_table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.databases_table.setSelectionMode(QTableWidget.SingleSelection)
+        self.databases_table.setSelectionBehavior(SelectRows)
+        self.databases_table.setSelectionMode(SingleSelection)
         self.databases_table.horizontalHeader().setStretchLastSection(True)
-        self.databases_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.databases_table.horizontalHeader().setSectionResizeMode(0, ResizeToContents)
         self.databases_table.setSortingEnabled(True)
         self.databases_table.itemSelectionChanged.connect(self.on_database_selection_changed)
         management_layout.addWidget(self.databases_table)
@@ -405,11 +406,11 @@ class DatabasesTab(BaseTab):
         
         msg = QMessageBox(self)
         msg.setWindowTitle("Help - Database Manager")
-        msg.setTextFormat(1)  # Rich text format
+        msg.setTextFormat(RichText)  # Rich text format
         msg.setText(help_text)
-        msg.setStandardButtons(QMessageBox.Ok)
+        msg.setStandardButtons(MsgBoxOk)
         msg.resize(700, 600)
-        msg.exec_()
+        msg.exec()
     
     def connect_signals(self):
         """Connect signals."""
@@ -458,13 +459,13 @@ class DatabasesTab(BaseTab):
                 
                 # Database name item
                 name_item = QTableWidgetItem(db_name)
-                name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)  # Make read-only
+                name_item.setFlags(name_item.flags() & ~ItemIsEditable)  # Make read-only
                 self.databases_table.setItem(row, 0, name_item)
                 
                 # Comment item
                 comment_text = comment if comment else "(No comment)"
                 comment_item = QTableWidgetItem(comment_text)
-                comment_item.setFlags(comment_item.flags() & ~Qt.ItemIsEditable)  # Make read-only
+                comment_item.setFlags(comment_item.flags() & ~ItemIsEditable)  # Make read-only
                 self.databases_table.setItem(row, 1, comment_item)
             
             # Update current databases list
@@ -563,9 +564,9 @@ class DatabasesTab(BaseTab):
         
         # Show the confirmation dialog
         dialog = DatabaseDeletionDialog(db_name, db_info, self)
-        result = dialog.exec_()
+        result = dialog.exec()
         
-        if result == QDialog.Accepted:
+        if result == DialogAccepted:
             # User confirmed deletion - execute immediately
             self.emit_progress_started()
             self.emit_log(f"🔥 DELETING database '{db_name}'")

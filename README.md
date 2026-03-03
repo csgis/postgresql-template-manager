@@ -17,7 +17,10 @@ The plugin will help to stay organized when working with multiple database proje
 
 ### QGIS Projects
 - **Fix QGIS Project Layers**: Search and update database connection configuration in layers.
+- **Service Mode**: Switch layers from explicit credentials (host/user/password) to a `pg_service.conf` service name — or the other way around
+- **Layer Extent Reset**: Recalculate extents for all PostgreSQL layers in the current project after a migration
 - **Clean QGS Files**: Remove username and password in case they have been saved within the project file
+- **Clean pg_service.conf**: Remove credentials from PostgreSQL service configuration files with auto-detection of standard file locations
 
 ### PostgreSQL Database
 - **Truncate Tables**: Truncate tables, to have a fresh start with duplicated databases
@@ -57,6 +60,12 @@ When the database connection is enabled, you can create a new database in Postgr
 #### Fix QGIS Project Layers
 In case your new database was copied from another destination or you want to change the user and password for your new database, you can change all connection parameters of the layers in the chosen project to the actual connection. Leave the fields empty that should stay the same.
 
+**Service Mode:** Enter a service name (e.g. `production`) to switch all layers from explicit credentials to `service='production'`. This references your `pg_service.conf` file for credentials. The explicit connection fields (host, port, user, password, dbname) will be removed from the layer datasources. When the service name field is filled, the explicit fields are disabled.
+
+**Explicit Mode:** Leave the service name empty and fill in the individual fields as before. If a layer currently uses a `service=` connection, it will be replaced with explicit parameters.
+
+**Layer Extent Reset:** After migrating layers or fixing connection parameters, click "Reset PostgreSQL Layer Extents" to recalculate extents and refresh all PostgreSQL layers in the current project.
+
 #### Truncate Tables
 In case you created a new database from an existing database including all data, you can remove the old data from your new database. The structure of the database will be preserved, but the data will be permanently deleted in the chosen database.
 
@@ -66,14 +75,20 @@ In order to share your project with other people you can create a portable versi
 #### Clean QGS Files
 To remove only the credentials, but to keep the database connection, you can choose any .qgs or .qgz-file from your computer. When opening the newly created .qgs-file you will be asked to enter the credentials manually.
 
+**pg_service.conf Cleaning:** In the same tab you can also clean credentials from PostgreSQL service configuration files. Use "Auto-detect" to find your `pg_service.conf` in standard locations (`PGSERVICEFILE` environment variable, `%APPDATA%\postgresql\` on Windows, `~/.pg_service.conf` on Linux/macOS) or browse manually. Choose whether to remove passwords, users, or both, then preview and clean.
+
 
 
 
 ## Requirements
 
-- QGIS 3.0 or higher
+- QGIS 3.34 or higher (compatible with both QGIS 3.x and 4.x)
 - PostgreSQL database with appropriate permissions
 - Python 3.6+ (included with QGIS)
+
+## Compatibility
+
+The plugin is compatible with both Qt5 (QGIS 3.x) and Qt6 (QGIS 4.x) through a central compatibility layer (`compat.py`). No separate versions are needed.
 
 
 ## Troubleshooting

@@ -2,11 +2,12 @@
 Connection tab for PostgreSQL Template Manager.
 """
 
-from qgis.PyQt.QtCore import QSettings, pyqtSignal
+from qgis.PyQt.QtCore import QSettings, pyqtSignal, Qt
 from qgis.PyQt.QtWidgets import (QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit, 
                                 QSpinBox, QPushButton, QLabel, QMessageBox)
 from qgis.PyQt.QtGui import QFont
 from .base_tab import BaseTab
+from ..compat import EchoPassword, MsgBoxOk, RichText
 
 
 class ConnectionTab(BaseTab):
@@ -61,7 +62,7 @@ class ConnectionTab(BaseTab):
         self.port_edit.setValue(5432)
         self.username_edit = QLineEdit()
         self.password_edit = QLineEdit()
-        self.password_edit.setEchoMode(QLineEdit.Password)
+        self.password_edit.setEchoMode(EchoPassword)
         
         form_layout.addRow("Host:", self.host_edit)
         form_layout.addRow("Port:", self.port_edit)
@@ -119,10 +120,10 @@ class ConnectionTab(BaseTab):
         
         msg = QMessageBox(self)
         msg.setWindowTitle("Help - PostgreSQL Connection")
-        msg.setTextFormat(1)  # Rich text format
+        msg.setTextFormat(RichText)  # Rich text format
         msg.setText(help_text)
-        msg.setStandardButtons(QMessageBox.Ok)
-        msg.exec_()
+        msg.setStandardButtons(MsgBoxOk)
+        msg.exec()
     
     def connect_signals(self):
         """Connect signals."""

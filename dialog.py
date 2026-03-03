@@ -8,6 +8,7 @@ from qgis.PyQt.QtWidgets import (QDockWidget, QVBoxLayout, QHBoxLayout, QWidget,
 from qgis.PyQt.QtGui import QFont
 
 from .tabs import ConnectionTab, TemplatesTab, DatabasesTab, TruncateTablesTab, QGISProjectsTab, ArchiveProjectTab, CleanQGSTab
+from .compat import AlignCenter, LeftDockWidgetArea
 
 
 class KgrToolBoxDialog(QDockWidget):
@@ -16,7 +17,7 @@ class KgrToolBoxDialog(QDockWidget):
     def __init__(self, db_manager, parent=None):
         super().__init__(parent)
         self.db_manager = db_manager
-        self.dock_area = Qt.LeftDockWidgetArea
+        self.dock_area = LeftDockWidgetArea
         
         # Connect main database manager signals
         self.db_manager.operation_finished.connect(self.on_operation_finished)
@@ -38,7 +39,7 @@ class KgrToolBoxDialog(QDockWidget):
         
         # Title
         title = QLabel("KGR Toolbox")
-        title.setAlignment(Qt.AlignCenter)
+        title.setAlignment(AlignCenter)
         font = QFont()
         font.setBold(True)
         font.setPointSize(12)

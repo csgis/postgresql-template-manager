@@ -9,6 +9,7 @@ from qgis.PyQt.QtWidgets import (QVBoxLayout, QHBoxLayout, QFormLayout, QComboBo
                                 QHeaderView)
 from qgis.PyQt.QtGui import QFont
 from .base_tab import BaseTab
+from ..compat import DialogAccepted, ItemIsEditable, MsgBoxOk, RichText, SelectRows, Stretch
 
 
 class TruncateConfirmationDialog(QDialog):
@@ -210,9 +211,9 @@ class TruncateTablesTab(BaseTab):
         self.tables_table = QTableWidget()
         self.tables_table.setColumnCount(2)
         self.tables_table.setHorizontalHeaderLabels(["Table Name", "Status"])
-        self.tables_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.tables_table.setSelectionBehavior(SelectRows)
         self.tables_table.horizontalHeader().setStretchLastSection(True)
-        self.tables_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tables_table.horizontalHeader().setSectionResizeMode(0, Stretch)
         self.tables_table.setSortingEnabled(True)
         self.tables_table.setMaximumHeight(200)
         preview_layout.addWidget(self.tables_table)
@@ -286,13 +287,13 @@ class TruncateTablesTab(BaseTab):
         
         msg = QMessageBox(self)
         msg.setWindowTitle("Help - Truncate Tables")
-        msg.setTextFormat(1)  # Rich text format
+        msg.setTextFormat(RichText)  # Rich text format
         msg.setText(help_text)
-        msg.setStandardButtons(QMessageBox.Ok)
+        msg.setStandardButtons(MsgBoxOk)
         
         # Make dialog appropriately sized
         msg.resize(500, 400)
-        msg.exec_()
+        msg.exec()
 
     def connect_signals(self):
         """Connect signals."""
@@ -463,7 +464,7 @@ class TruncateTablesTab(BaseTab):
             
             # Table name
             name_item = QTableWidgetItem(table_name)
-            name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
+            name_item.setFlags(name_item.flags() & ~ItemIsEditable)
             self.tables_table.setItem(row, 0, name_item)
             
             # Status
@@ -485,7 +486,7 @@ class TruncateTablesTab(BaseTab):
                 status_item.setFont(font)
                 tables_to_truncate += 1
             
-            status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
+            status_item.setFlags(status_item.flags() & ~ItemIsEditable)
             self.tables_table.setItem(row, 1, status_item)
         
         # Update truncate button state
@@ -535,9 +536,9 @@ class TruncateTablesTab(BaseTab):
             excluded_tables,
             self
         )
-        result = dialog.exec_()
+        result = dialog.exec()
         
-        if result == QDialog.Accepted:
+        if result == DialogAccepted:
             # User confirmed - execute truncation
             self.emit_progress_started()
             self.emit_log(f"🗑️ TRUNCATING {len(tables_to_truncate)} table(s) in schema '{schema_name}' of database '{database_name}'")

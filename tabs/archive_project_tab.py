@@ -9,15 +9,16 @@ import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from PIL import Image, ImageOps
-from qgis.PyQt.QtCore import pyqtSignal
+from qgis.PyQt.QtCore import pyqtSignal, Qt
 from qgis.PyQt.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit, QPushButton,
     QLabel, QFileDialog, QProgressBar, QMessageBox, QCheckBox, QSpinBox, QTextEdit
 )
 from qgis.PyQt.QtGui import QFont
-from qgis.core import QgsProject, QgsVectorLayer, QgsVectorFileWriter
+from qgis.core import QgsProject, QgsVectorLayer, QgsVectorFileWriter, Qgis
 
 from .base_tab import BaseTab
+from ..compat import CreateOrOverwriteFile, CreateOrOverwriteLayer, HAS_WRITE_V3, LayerTypeVector, MsgBoxIconWarning, MsgBoxOk, RichText, WriterNoError
 
 class ArchiveProjectTab(BaseTab):
     project_archived = pyqtSignal(str)
@@ -225,10 +226,10 @@ class ArchiveProjectTab(BaseTab):
         
         msg = QMessageBox(self)
         msg.setWindowTitle("Help - Portable Project Archiver")
-        msg.setTextFormat(1)  # Rich text format
+        msg.setTextFormat(RichText)  # Rich text format
         msg.setText(help_text)
-        msg.setStandardButtons(QMessageBox.Ok)
-        msg.exec_()
+        msg.setStandardButtons(MsgBoxOk)
+        msg.exec()
 
     def connect_signals(self):
         self.browse_folder_btn.clicked.connect(self._browse_output_folder)
@@ -490,15 +491,15 @@ class ArchiveProjectTab(BaseTab):
         # Show dialog
         msg = QMessageBox(self)
         msg.setWindowTitle("Manual Review Required - Absolute Paths Found")
-        msg.setTextFormat(1)  # Rich text format
+        msg.setTextFormat(RichText)  # Rich text format
         msg.setText("\n".join(summary_parts))
-        msg.setIcon(QMessageBox.Warning)
-        msg.setStandardButtons(QMessageBox.Ok)
-        msg.setDefaultButton(QMessageBox.Ok)
+        msg.setIcon(MsgBoxIconWarning)
+        msg.setStandardButtons(MsgBoxOk)
+        msg.setDefaultButton(MsgBoxOk)
         
         # Make dialog larger
         msg.setMinimumWidth(600)
-        msg.exec_()
+        msg.exec()
 
     def _try_convert_csv_paths_to_relative(self, qgs_path, output_folder):
         """Attempt to convert CSV file paths to relative paths if the files exist in the project"""
@@ -612,7 +613,7 @@ class ArchiveProjectTab(BaseTab):
         try:
             # Count total steps for progress calculation
             total_layers = len([layer for layer in project.mapLayers().values() 
-                              if layer.type() == QgsVectorLayer.VectorLayer])
+                              if layer.type() == LayerTypeVector])
             project_dir = project_file.parent
             total_files = len([item for item in project_dir.iterdir() if item.name != project_file.name])
             
@@ -692,7 +693,7 @@ class ArchiveProjectTab(BaseTab):
             first_layer = True
             
             for layer_id, layer in project.mapLayers().items():
-                if layer.type() == QgsVectorLayer.VectorLayer:
+                if layer.type() == LayerTypeVector:
                     # Check if it's a PostgreSQL layer
                     provider_type = layer.providerType()
                     source = layer.source()
@@ -714,19 +715,27 @@ class ArchiveProjectTab(BaseTab):
                     # For the first layer, create/overwrite the geopackage
                     # For subsequent layers, append to existing geopackage
                     if first_layer:
-                        options.actionOnExistingFile = QgsVectorFileWriter.CreateOrOverwriteFile
+                        options.actionOnExistingFile = CreateOrOverwriteFile
                         first_layer = False
                     else:
-                        options.actionOnExistingFile = QgsVectorFileWriter.CreateOrOverwriteLayer
+                        options.actionOnExistingFile = CreateOrOverwriteLayer
                     
-                    # Export layer
-                    error, error_message = QgsVectorFileWriter.writeAsVectorFormat(
-                        layer, 
-                        str(gpkg_path),
-                        options
-                    )
+                    # Export layer (V3 for QGIS ≥3.10.3 / 4.x, fallback for older)
+                    if HAS_WRITE_V3:
+                        error, error_message, _, _ = QgsVectorFileWriter.writeAsVectorFormatV3(
+                            layer, 
+                            str(gpkg_path),
+                            QgsProject.instance().transformContext(),
+                            options
+                        )
+                    else:
+                        error, error_message = QgsVectorFileWriter.writeAsVectorFormat(
+                            layer, 
+                            str(gpkg_path),
+                            options
+                        )
                     
-                    if error == QgsVectorFileWriter.NoError:
+                    if error == WriterNoError:
                         # Use relative path since GeoPackage is always next to QGS file
                         new_source = f"data.gpkg|layername={layer_name}"
                         new_layer_sources[layer_id] = new_source

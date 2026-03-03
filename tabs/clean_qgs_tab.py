@@ -4,14 +4,16 @@ Clean QGS tab for removing database credentials from QGIS project files.
 
 import os
 import re
+import configparser
 import xml.etree.ElementTree as ET
-from qgis.PyQt.QtCore import pyqtSignal
+from qgis.PyQt.QtCore import pyqtSignal, Qt
 from qgis.PyQt.QtWidgets import (QVBoxLayout, QHBoxLayout, QFormLayout, 
                                 QPushButton, QGroupBox, QLabel, QLineEdit,
                                 QFileDialog, QMessageBox, QTextEdit, QCheckBox,
                                 QTableWidget, QTableWidgetItem, QHeaderView)
 from qgis.PyQt.QtGui import QFont
 from .base_tab import BaseTab
+from ..compat import ElideNone, MsgBoxOk, ResizeToContents, RichText, SelectRows, Stretch
 
 
 class CleanQGSTab(BaseTab):
@@ -128,19 +130,19 @@ class CleanQGSTab(BaseTab):
         
         # Configure table appearance
         self.preview_table.setAlternatingRowColors(True)
-        self.preview_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.preview_table.setSelectionBehavior(SelectRows)
         self.preview_table.verticalHeader().setVisible(False)
         
         # Set column widths
         header = self.preview_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # # column
-        header.setSectionResizeMode(1, QHeaderView.Stretch)  # Original column
-        header.setSectionResizeMode(2, QHeaderView.Stretch)  # Cleaned column
+        header.setSectionResizeMode(0, ResizeToContents)  # # column
+        header.setSectionResizeMode(1, Stretch)  # Original column
+        header.setSectionResizeMode(2, Stretch)  # Cleaned column
         
         # Set maximum height and word wrap
         self.preview_table.setMaximumHeight(250)
         self.preview_table.setWordWrap(True)
-        self.preview_table.setTextElideMode(3)
+        self.preview_table.setTextElideMode(ElideNone)
         
         # Add placeholder message
         self.preview_info_label = QLabel("Select a file and click 'Preview Changes' to see what will be modified...")
@@ -154,6 +156,77 @@ class CleanQGSTab(BaseTab):
         
         layout.addWidget(preview_section)
         
+        # ---- Service.conf section ----
+        service_section = QGroupBox("PostgreSQL Service File (pg_service.conf)")
+        service_layout = QVBoxLayout(service_section)
+        
+        service_file_layout = QHBoxLayout()
+        self.service_file_edit = QLineEdit()
+        self.service_file_edit.setPlaceholderText("Select a pg_service.conf file")
+        self.service_file_edit.setReadOnly(True)
+        
+        self.browse_service_btn = QPushButton("Browse...")
+        self.browse_service_btn.clicked.connect(self.browse_service_file)
+        
+        self.detect_service_btn = QPushButton("Auto-detect")
+        self.detect_service_btn.setToolTip("Try to find pg_service.conf in standard locations")
+        self.detect_service_btn.clicked.connect(self.detect_service_file)
+        
+        service_file_layout.addWidget(self.service_file_edit)
+        service_file_layout.addWidget(self.browse_service_btn)
+        service_file_layout.addWidget(self.detect_service_btn)
+        service_layout.addLayout(service_file_layout)
+        
+        # Service cleaning options
+        service_options_layout = QHBoxLayout()
+        self.service_remove_password_cb = QCheckBox("Remove passwords")
+        self.service_remove_password_cb.setChecked(True)
+        self.service_remove_user_cb = QCheckBox("Remove users")
+        self.service_remove_user_cb.setChecked(False)
+        service_options_layout.addWidget(self.service_remove_password_cb)
+        service_options_layout.addWidget(self.service_remove_user_cb)
+        service_options_layout.addStretch()
+        service_layout.addLayout(service_options_layout)
+        
+        # Service preview
+        self.service_preview_text = QTextEdit()
+        self.service_preview_text.setReadOnly(True)
+        self.service_preview_text.setMaximumHeight(120)
+        self.service_preview_text.setPlaceholderText("Service file contents will appear here...")
+        service_layout.addWidget(self.service_preview_text)
+        
+        # Service action buttons
+        service_btn_layout = QHBoxLayout()
+        self.preview_service_btn = QPushButton("Preview")
+        self.preview_service_btn.clicked.connect(self.preview_service_file)
+        self.preview_service_btn.setEnabled(False)
+        
+        self.clean_service_btn = QPushButton("Clean Service File")
+        self.clean_service_btn.clicked.connect(self.clean_service_file)
+        self.clean_service_btn.setEnabled(False)
+        self.clean_service_btn.setStyleSheet(
+            "QPushButton { "
+            "background-color: #4CAF50; "
+            "color: white; "
+            "font-weight: bold; "
+            "padding: 8px 16px; "
+            "border: none; "
+            "border-radius: 4px; "
+            "} "
+            "QPushButton:hover { background-color: #45a049; } "
+            "QPushButton:disabled { background-color: #cccccc; }"
+        )
+        
+        service_btn_layout.addWidget(self.preview_service_btn)
+        service_btn_layout.addStretch()
+        service_btn_layout.addWidget(self.clean_service_btn)
+        service_layout.addLayout(service_btn_layout)
+        
+        layout.addWidget(service_section)
+        
+        # Connect service file path changes
+        self.service_file_edit.textChanged.connect(self._on_service_file_path_changed)
+        
         # Connect file path changes to enable/disable buttons
         self.file_path_edit.textChanged.connect(self._on_file_path_changed)
     
@@ -161,8 +234,9 @@ class CleanQGSTab(BaseTab):
         """Show help information in a popup dialog."""
         help_text = (
             "<h3>QGS File Credential Cleaner</h3>"
-            "<p>This tool removes database credentials (user/password) from QGIS project files.</p>"
-            "<h4>How it works:</h4>"
+            "<p>This tool removes database credentials (user/password) from QGIS project files "
+            "and PostgreSQL service configuration files.</p>"
+            "<h4>QGS/QGZ Cleaning:</h4>"
             "<ul>"
             "<li>Scans the QGS/QGZ file for PostgreSQL datasource connections</li>"
             "<li>Shows a table preview of what will be changed</li>"
@@ -173,19 +247,33 @@ class CleanQGSTab(BaseTab):
             "<h4>Example:</h4>"
             "<p><b>Before:</b> dbname='mydb' host=localhost user='admin' password='secret'</p>"
             "<p><b>After:</b> dbname='mydb' host=localhost</p>"
+            "<h4>PostgreSQL Service File (pg_service.conf):</h4>"
+            "<ul>"
+            "<li><b>Auto-detect:</b> Searches standard locations for pg_service.conf</li>"
+            "<li><b>Preview:</b> Shows services and which credentials will be removed</li>"
+            "<li><b>Clean:</b> Creates a cleaned copy with '_cleaned' suffix</li>"
+            "<li>Supports removing passwords and/or user entries from all services</li>"
+            "</ul>"
+            "<h4>Standard pg_service.conf locations:</h4>"
+            "<ul>"
+            "<li><b>Windows:</b> %APPDATA%\\postgresql\\pg_service.conf</li>"
+            "<li><b>Linux/macOS:</b> ~/.pg_service.conf or /etc/pg_service.conf</li>"
+            "<li><b>PGSERVICEFILE:</b> Custom path via environment variable</li>"
+            "</ul>"
             "<h4>Supported file types:</h4>"
             "<ul>"
             "<li><b>.qgs files:</b> Direct XML processing</li>"
             "<li><b>.qgz files:</b> Extracts and processes the contained .qgs file</li>"
+            "<li><b>pg_service.conf:</b> INI-style PostgreSQL connection configuration</li>"
             "</ul>"
         )
         
         msg = QMessageBox(self)
         msg.setWindowTitle("Help - QGS File Credential Cleaner")
-        msg.setTextFormat(1)  # Rich text format
+        msg.setTextFormat(RichText)  # Rich text format
         msg.setText(help_text)
-        msg.setStandardButtons(QMessageBox.Ok)
-        msg.exec_()
+        msg.setStandardButtons(MsgBoxOk)
+        msg.exec()
     
     def _on_file_path_changed(self, text):
         """Enable/disable buttons based on file path."""
@@ -476,3 +564,186 @@ class CleanQGSTab(BaseTab):
         super().connect_signals()
         # No database manager operations needed for this tab
         pass
+    
+    # ---- Service.conf methods ----
+    
+    def _on_service_file_path_changed(self, text):
+        """Enable/disable service buttons based on file path."""
+        has_file = bool(text.strip()) and os.path.exists(text.strip())
+        self.preview_service_btn.setEnabled(has_file)
+        self.clean_service_btn.setEnabled(has_file)
+        if not has_file:
+            self.service_preview_text.clear()
+    
+    def detect_service_file(self):
+        """Auto-detect pg_service.conf in standard locations."""
+        candidates = []
+        
+        # PGSERVICEFILE environment variable (highest priority)
+        env_path = os.environ.get('PGSERVICEFILE')
+        if env_path:
+            candidates.append(env_path)
+        
+        # Platform-specific standard locations
+        if os.name == 'nt':
+            # Windows
+            appdata = os.environ.get('APPDATA', '')
+            if appdata:
+                candidates.append(os.path.join(appdata, 'postgresql', 'pg_service.conf'))
+            candidates.append(os.path.join(os.path.expanduser('~'), 'pg_service.conf'))
+        else:
+            # Linux / macOS
+            candidates.append(os.path.expanduser('~/.pg_service.conf'))
+            candidates.append('/etc/pg_service.conf')
+            candidates.append(os.path.expanduser('~/pg_service.conf'))
+        
+        for path in candidates:
+            if path and os.path.isfile(path):
+                self.service_file_edit.setText(path)
+                self.emit_log(f"Found pg_service.conf at: {path}")
+                self.preview_service_file()
+                return
+        
+        self.emit_log("Could not auto-detect pg_service.conf in standard locations")
+        self.show_warning(
+            "Could not find pg_service.conf.\n\n"
+            "Searched locations:\n" +
+            "\n".join(f"  • {c}" for c in candidates if c) +
+            "\n\nPlease use 'Browse...' to select the file manually."
+        )
+    
+    def browse_service_file(self):
+        """Browse for pg_service.conf file."""
+        start_dir = ""
+        if os.name == 'nt':
+            appdata = os.environ.get('APPDATA', '')
+            if appdata:
+                pg_dir = os.path.join(appdata, 'postgresql')
+                if os.path.isdir(pg_dir):
+                    start_dir = pg_dir
+        else:
+            start_dir = os.path.expanduser('~')
+        
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select PostgreSQL Service File",
+            start_dir,
+            "Service Config (pg_service.conf *.conf);;All Files (*)"
+        )
+        
+        if file_path:
+            self.service_file_edit.setText(file_path)
+            self.emit_log(f"Selected service file: {file_path}")
+            self.preview_service_file()
+    
+    def _parse_service_file(self, file_path):
+        """Parse a pg_service.conf file and return config + raw lines."""
+        config = configparser.ConfigParser()
+        config.read(file_path, encoding='utf-8')
+        return config
+    
+    def preview_service_file(self):
+        """Preview what credentials would be removed from the service file."""
+        file_path = self.service_file_edit.text().strip()
+        if not file_path or not os.path.exists(file_path):
+            return
+        
+        try:
+            config = self._parse_service_file(file_path)
+            
+            preview_lines = []
+            remove_pw = self.service_remove_password_cb.isChecked()
+            remove_user = self.service_remove_user_cb.isChecked()
+            
+            if not config.sections():
+                self.service_preview_text.setPlainText("No services found in this file.")
+                return
+            
+            for section in config.sections():
+                preview_lines.append(f"[{section}]")
+                for key, value in config.items(section):
+                    if key == 'password' and remove_pw:
+                        preview_lines.append(f"  ✗ {key} = *** (WILL BE REMOVED)")
+                    elif key == 'user' and remove_user:
+                        preview_lines.append(f"  ✗ {key} = {value} (WILL BE REMOVED)")
+                    else:
+                        preview_lines.append(f"  ✓ {key} = {value}")
+                preview_lines.append("")
+            
+            self.service_preview_text.setPlainText("\n".join(preview_lines))
+            self.emit_log(f"Previewed service file: {len(config.sections())} service(s) found")
+            
+        except Exception as e:
+            self.service_preview_text.setPlainText(f"Error reading file: {str(e)}")
+            self.emit_log(f"Error previewing service file: {str(e)}")
+    
+    def clean_service_file(self):
+        """Clean credentials from the pg_service.conf file."""
+        file_path = self.service_file_edit.text().strip()
+        if not file_path or not os.path.exists(file_path):
+            return
+        
+        remove_pw = self.service_remove_password_cb.isChecked()
+        remove_user = self.service_remove_user_cb.isChecked()
+        
+        if not remove_pw and not remove_user:
+            self.show_warning("Please select at least one credential type to remove.")
+            return
+        
+        try:
+            self.emit_progress_started()
+            
+            # Read the file line by line to preserve formatting and comments
+            with open(file_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            cleaned_lines = []
+            changes_count = 0
+            
+            for line in lines:
+                stripped = line.strip()
+                
+                # Check if this line is a key=value we want to remove
+                if stripped and not stripped.startswith('#') and not stripped.startswith('['):
+                    if '=' in stripped:
+                        key = stripped.split('=', 1)[0].strip().lower()
+                        if key == 'password' and remove_pw:
+                            changes_count += 1
+                            continue  # Skip this line
+                        elif key == 'user' and remove_user:
+                            changes_count += 1
+                            continue  # Skip this line
+                
+                cleaned_lines.append(line)
+            
+            if changes_count == 0:
+                self.emit_log("No credentials found to remove from service file.")
+                self.show_info("No credentials found to remove from the service file.")
+                return
+            
+            # Generate cleaned file path
+            base_name, ext = os.path.splitext(file_path)
+            if not ext:
+                ext = '.conf'
+            cleaned_path = f"{base_name}_cleaned{ext}"
+            
+            # Write cleaned file
+            with open(cleaned_path, 'w', encoding='utf-8') as f:
+                f.writelines(cleaned_lines)
+            
+            success_msg = (f"Service file cleaned successfully!\n"
+                          f"• Removed {changes_count} credential(s)\n"
+                          f"• Original file preserved\n"
+                          f"• Saved to: {os.path.basename(cleaned_path)}")
+            
+            self.emit_log(success_msg.replace('\n', ' '))
+            self.show_info(success_msg)
+            
+            # Refresh preview
+            self.preview_service_file()
+            
+        except Exception as e:
+            self.show_error(f"Error cleaning service file: {str(e)}")
+            self.emit_log(f"Error during service file cleaning: {str(e)}")
+        finally:
+            self.emit_progress_finished()

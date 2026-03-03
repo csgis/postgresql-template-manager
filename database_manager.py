@@ -8,6 +8,7 @@ import zipfile
 import re
 import shutil
 from datetime import datetime
+from .compat import MessageCritical, MessageInfo, MessageWarning
 
 
 class DatabaseManager(QObject):
@@ -22,7 +23,7 @@ class DatabaseManager(QObject):
         self.connection_params = {}
         self.connection = None
     
-    def log_message(self, message, level=Qgis.Info):
+    def log_message(self, message, level=MessageInfo):
         """Log message to QGIS message log."""
         QgsMessageLog.logMessage(message, 'KGR Toolbox', level)
     
@@ -50,7 +51,7 @@ class DatabaseManager(QObject):
             
         except psycopg2.Error as e:
             error_msg = f"Connection failed: {str(e)}"
-            self.log_message(error_msg, Qgis.Critical)
+            self.log_message(error_msg, MessageCritical)
             self.operation_finished.emit(False, error_msg)
             return False
     
@@ -82,14 +83,14 @@ class DatabaseManager(QObject):
                 return databases
                 
             except psycopg2.Error as db_error:
-                self.log_message(f"Database error getting databases: {str(db_error)}", Qgis.Critical)
+                self.log_message(f"Database error getting databases: {str(db_error)}", MessageCritical)
                 return []
             finally:
                 cursor.close()
                 conn.close()
             
         except psycopg2.Error as e:
-            self.log_message(f"Error getting databases: {str(e)}", Qgis.Critical)
+            self.log_message(f"Error getting databases: {str(e)}", MessageCritical)
             return []
     
     def get_templates(self):
@@ -120,14 +121,14 @@ class DatabaseManager(QObject):
                 return templates
                 
             except psycopg2.Error as db_error:
-                self.log_message(f"Database error getting templates: {str(db_error)}", Qgis.Critical)
+                self.log_message(f"Database error getting templates: {str(db_error)}", MessageCritical)
                 return []
             finally:
                 cursor.close()
                 conn.close()
             
         except psycopg2.Error as e:
-            self.log_message(f"Error getting templates: {str(e)}", Qgis.Critical)
+            self.log_message(f"Error getting templates: {str(e)}", MessageCritical)
             return []
     
     def check_user_privileges(self):
@@ -156,14 +157,14 @@ class DatabaseManager(QObject):
                 }
                 
             except psycopg2.Error as db_error:
-                self.log_message(f"Database error checking privileges: {str(db_error)}", Qgis.Critical)
+                self.log_message(f"Database error checking privileges: {str(db_error)}", MessageCritical)
                 return {'is_superuser': False, 'can_create_db': False}
             finally:
                 cursor.close()
                 conn.close()
             
         except psycopg2.Error as e:
-            self.log_message(f"Error checking privileges: {str(e)}", Qgis.Critical)
+            self.log_message(f"Error checking privileges: {str(e)}", MessageCritical)
             return {'is_superuser': False, 'can_create_db': False}
     
     def database_exists(self, db_name):
@@ -183,14 +184,14 @@ class DatabaseManager(QObject):
                 return exists
                 
             except psycopg2.Error as db_error:
-                self.log_message(f"Database error checking database existence: {str(db_error)}", Qgis.Critical)
+                self.log_message(f"Database error checking database existence: {str(db_error)}", MessageCritical)
                 return False
             finally:
                 cursor.close()
                 conn.close()
             
         except psycopg2.Error as e:
-            self.log_message(f"Error checking database existence: {str(e)}", Qgis.Critical)
+            self.log_message(f"Error checking database existence: {str(e)}", MessageCritical)
             return False
     
     def is_system_database(self, db_name):
@@ -246,14 +247,14 @@ class DatabaseManager(QObject):
                 return db_info
                 
             except psycopg2.Error as db_error:
-                self.log_message(f"Database error getting database info: {str(db_error)}", Qgis.Critical)
+                self.log_message(f"Database error getting database info: {str(db_error)}", MessageCritical)
                 return None
             finally:
                 cursor.close()
                 conn.close()
             
         except psycopg2.Error as e:
-            self.log_message(f"Error getting database info: {str(e)}", Qgis.Critical)
+            self.log_message(f"Error getting database info: {str(e)}", MessageCritical)
             return None
     
     def delete_database(self, db_name, force_drop_connections=False):
@@ -273,21 +274,21 @@ class DatabaseManager(QObject):
             # Check if database exists
             if not self.database_exists(db_name):
                 error_msg = f"Database '{db_name}' does not exist."
-                self.log_message(error_msg, Qgis.Warning)
+                self.log_message(error_msg, MessageWarning)
                 self.operation_finished.emit(False, error_msg)
                 return False
             
             # Prevent deletion of system databases
             if self.is_system_database(db_name):
                 error_msg = f"Cannot delete system database '{db_name}'. System databases (postgres, template0, template1) cannot be deleted."
-                self.log_message(error_msg, Qgis.Critical)
+                self.log_message(error_msg, MessageCritical)
                 self.operation_finished.emit(False, error_msg)
                 return False
             
             # Prevent deletion of currently connected database
             if self.connection_params.get('database') == db_name:
                 error_msg = f"Cannot delete database '{db_name}' because you are currently connected to it. Please connect to a different database first."
-                self.log_message(error_msg, Qgis.Critical)
+                self.log_message(error_msg, MessageCritical)
                 self.operation_finished.emit(False, error_msg)
                 return False
             
@@ -305,7 +306,7 @@ class DatabaseManager(QObject):
                     # Drop connections
                     if not self.drop_database_connections(db_name):
                         error_msg = f"Failed to drop active connections to database '{db_name}'. Cannot proceed with deletion."
-                        self.log_message(error_msg, Qgis.Critical)
+                        self.log_message(error_msg, MessageCritical)
                         self.operation_finished.emit(False, error_msg)
                         return False
                     
@@ -317,12 +318,12 @@ class DatabaseManager(QObject):
                     remaining_connections = self.get_connection_count(db_name)
                     if remaining_connections > 0:
                         error_msg = f"Still {remaining_connections} active connections after termination. Cannot delete database."
-                        self.log_message(error_msg, Qgis.Critical)
+                        self.log_message(error_msg, MessageCritical)
                         self.operation_finished.emit(False, error_msg)
                         return False
                 else:
                     error_msg = f"Cannot delete database '{db_name}' because it has {connection_count} active connections. Use 'force_drop_connections=True' to terminate connections first."
-                    self.log_message(error_msg, Qgis.Critical)
+                    self.log_message(error_msg, MessageCritical)
                     self.operation_finished.emit(False, error_msg)
                     return False
             
@@ -331,7 +332,7 @@ class DatabaseManager(QObject):
             self.progress_updated.emit(f"🗑️  DELETING DATABASE '{db_name}' - THIS ACTION CANNOT BE UNDONE!")
             
             # Log the deletion attempt
-            self.log_message(f"CRITICAL: Attempting to delete database '{db_name}' by user '{self.connection_params['user']}'", Qgis.Critical)
+            self.log_message(f"CRITICAL: Attempting to delete database '{db_name}' by user '{self.connection_params['user']}'", MessageCritical)
             
             conn_params = self.connection_params.copy()
             conn_params['database'] = 'postgres'
@@ -348,7 +349,7 @@ class DatabaseManager(QObject):
             
             # Log successful deletion
             success_msg = f"✅ Database '{db_name}' has been permanently deleted!"
-            self.log_message(f"SUCCESS: Database '{db_name}' deleted successfully by user '{self.connection_params['user']}'", Qgis.Info)
+            self.log_message(f"SUCCESS: Database '{db_name}' deleted successfully by user '{self.connection_params['user']}'", MessageInfo)
             self.progress_updated.emit(success_msg)
             self.operation_finished.emit(True, success_msg)
             
@@ -356,12 +357,12 @@ class DatabaseManager(QObject):
             
         except psycopg2.Error as e:
             error_msg = f"❌ Error deleting database '{db_name}': {str(e)}"
-            self.log_message(error_msg, Qgis.Critical)
+            self.log_message(error_msg, MessageCritical)
             self.operation_finished.emit(False, error_msg)
             return False
         except Exception as e:
             error_msg = f"❌ Unexpected error deleting database '{db_name}': {str(e)}"
-            self.log_message(error_msg, Qgis.Critical)
+            self.log_message(error_msg, MessageCritical)
             self.operation_finished.emit(False, error_msg)
             return False
     
@@ -411,20 +412,20 @@ class DatabaseManager(QObject):
                             })
                             
                     except psycopg2.Error as e:
-                        self.log_message(f"Warning: Could not read projects from {schema}.{table}: {str(e)}", Qgis.Warning)
+                        self.log_message(f"Warning: Could not read projects from {schema}.{table}: {str(e)}", MessageWarning)
                 
                 self.progress_updated.emit(f"Found {len(projects)} QGIS projects")
                 return projects
                 
             except psycopg2.Error as db_error:
-                self.log_message(f"Database error finding QGIS projects: {str(db_error)}", Qgis.Critical)
+                self.log_message(f"Database error finding QGIS projects: {str(db_error)}", MessageCritical)
                 return []
             finally:
                 cursor.close()
                 conn.close()
             
         except psycopg2.Error as e:
-            self.log_message(f"Error finding QGIS projects: {str(e)}", Qgis.Critical)
+            self.log_message(f"Error finding QGIS projects: {str(e)}", MessageCritical)
             return []
     
     def fix_qgis_project_layers(self, database_name, schema, table, project_name, new_params, create_backup=True):
@@ -460,7 +461,7 @@ class DatabaseManager(QObject):
                 
         except Exception as e:
             error_msg = f"Error fixing QGIS project: {str(e)}"
-            self.log_message(error_msg, Qgis.Critical)
+            self.log_message(error_msg, MessageCritical)
             self.operation_finished.emit(False, error_msg)
     
     def _download_project_content(self, database_name, schema, table, project_name):
@@ -497,7 +498,7 @@ class DatabaseManager(QObject):
             return content
             
         except psycopg2.Error as e:
-            self.log_message(f"Error downloading project content: {str(e)}", Qgis.Critical)
+            self.log_message(f"Error downloading project content: {str(e)}", MessageCritical)
             return None
     
 
@@ -617,7 +618,7 @@ class DatabaseManager(QObject):
                     
                     self.progress_updated.emit(f"Created diff instructions: {diff_instructions_path}")
                 else:
-                    self.log_message("No writable debug directory found for saving QGS files.", Qgis.Warning)
+                    self.log_message("No writable debug directory found for saving QGS files.", MessageWarning)
 
                 # Create new QGZ file with only the files at the archive root (including .db, .qls, etc.)
                 self.progress_updated.emit("Creating updated project file...")
@@ -643,7 +644,7 @@ class DatabaseManager(QObject):
                 return final_content
                 
         except Exception as e:
-            self.log_message(f"Error processing QGS file: {str(e)}", Qgis.Critical)
+            self.log_message(f"Error processing QGS file: {str(e)}", MessageCritical)
             return None
         
     def _clean_and_preserve_zip_content(self, content):
@@ -664,7 +665,7 @@ class DatabaseManager(QObject):
         zip_start = content.find(zip_magic)
         
         if zip_start == -1:
-            self.log_message("No ZIP magic bytes found in content", Qgis.Critical)
+            self.log_message("No ZIP magic bytes found in content", MessageCritical)
             return None, None
         
         # Extract prefix bytes (database metadata)
@@ -726,7 +727,7 @@ class DatabaseManager(QObject):
             self.progress_updated.emit(f"Backups created: {raw_backup_path}")
             
         except Exception as e:
-            self.log_message(f"Warning: Could not create backup: {str(e)}", Qgis.Warning)
+            self.log_message(f"Warning: Could not create backup: {str(e)}", MessageWarning)
     
     def _modify_qgs_datasources(self, qgs_path, new_params):
         """Modify datasource connections in QGS file - manual parsing approach."""
@@ -738,17 +739,23 @@ class DatabaseManager(QObject):
             original_content = content
             modifications_count = 0
             
-            # Only process parameters that are actually provided and not empty
+            mode = new_params.get('__mode__', 'explicit')
+            
+            # Build working params (exclude internal keys)
             params_to_change = {}
             for param_name, new_value in new_params.items():
-                if new_value and new_value.strip():
+                if param_name.startswith('_'):
+                    continue
+                if isinstance(new_value, str) and new_value.strip():
                     params_to_change[param_name] = new_value.strip()
+                elif isinstance(new_value, dict):
+                    params_to_change[param_name] = new_value
             
             if not params_to_change:
                 self.progress_updated.emit("No parameters to change")
                 return False
             
-            self.progress_updated.emit(f"Will change these parameters: {list(params_to_change.keys())}")
+            self.progress_updated.emit(f"Mode: {mode}, parameters: {list(params_to_change.keys())}")
             
             # Find all datasource tags and their positions
             datasource_pattern = r'<datasource>([^<]+)</datasource>'
@@ -763,69 +770,31 @@ class DatabaseManager(QObject):
                 
                 # Parse the datasource content into key-value pairs
                 original_params = self._parse_datasource_simple(datasource_content)
-                new_params_dict = original_params.copy()
-                datasource_changed = False
                 
-                # Apply only the requested changes
-                if 'dbname' in params_to_change:
-                    if 'dbname' in new_params_dict:
-                        new_params_dict['dbname'] = params_to_change['dbname']
-                        datasource_changed = True
+                # Skip non-PostgreSQL datasources (must have table= or service= or dbname=)
+                if not any(k in original_params for k in ('table', 'service', 'dbname')):
+                    continue
                 
-                if 'host' in params_to_change:
-                    if 'host' in new_params_dict:
-                        new_params_dict['host'] = params_to_change['host']
-                        datasource_changed = True
+                if mode == 'service':
+                    new_datasource_content = self._apply_service_mode(
+                        datasource_content, original_params, params_to_change)
+                else:
+                    new_datasource_content = self._apply_explicit_mode(
+                        datasource_content, original_params, params_to_change)
                 
-                if 'port' in params_to_change:
-                    if 'port' in new_params_dict:
-                        new_params_dict['port'] = params_to_change['port']
-                        datasource_changed = True
-                
-                if 'user' in params_to_change:
-                    if 'user' in new_params_dict:
-                        new_params_dict['user'] = params_to_change['user']
-                        datasource_changed = True
-                
-                if 'password' in params_to_change:
-                    if 'password' in new_params_dict:
-                        new_params_dict['password'] = params_to_change['password']
-                        datasource_changed = True
-                
-                if 'schema' in params_to_change and 'table' in new_params_dict:
-                    # Only change schema part of table parameter
-                    table_value = new_params_dict['table']
-                    if '.' in table_value:
-                        # Handle quoted schema: "old_schema"."table" -> "new_schema"."table"
-                        if table_value.startswith('"'):
-                            parts = table_value.split('"."', 1)
-                            if len(parts) == 2:
-                                new_params_dict['table'] = f'"{params_to_change["schema"]}"."{parts[1]}'
-                                datasource_changed = True
-                        else:
-                            # Handle unquoted schema: old_schema.table -> new_schema.table
-                            parts = table_value.split('.', 1)
-                            if len(parts) == 2:
-                                new_params_dict['table'] = f'{params_to_change["schema"]}.{parts[1]}'
-                                datasource_changed = True
-                
-                if datasource_changed:
+                if new_datasource_content != datasource_content:
                     modifications_count += 1
-                    
-                    # Rebuild the datasource string preserving original formatting
-                    new_datasource_content = self._rebuild_datasource_simple(datasource_content, new_params_dict)
                     new_full_datasource = f'<datasource>{new_datasource_content}</datasource>'
-                    
-                    # Replace this specific datasource in the content
                     content = content[:start_pos] + new_full_datasource + content[end_pos:]
                     
-                    # Extract table name for logging
                     table_name = original_params.get('table', 'unknown')
                     self.progress_updated.emit(f"Updated datasource {modifications_count}: {table_name}")
-                    
-                    # Debug output
-                    self.progress_updated.emit(f"  Original: {datasource_content[:80]}...")
-                    self.progress_updated.emit(f"  Modified: {new_datasource_content[:80]}...")
+                    self.progress_updated.emit(f"  Original: {datasource_content[:100]}...")
+                    self.progress_updated.emit(f"  Modified: {new_datasource_content[:100]}...")
+            
+            # Also update source= attributes in layer-tree-layer and other XML attributes
+            # These use &quot; for quotes in attribute values
+            content = self._update_source_attributes(content, new_params, mode)
             
             # Write modified content back only if changes were made
             if content != original_content:
@@ -840,6 +809,161 @@ class DatabaseManager(QObject):
             
         except Exception as e:
             raise Exception(f"Error modifying QGS datasources: {str(e)}")
+    
+    def _apply_service_mode(self, datasource_content, original_params, params_to_change):
+        """Apply service mode: replace explicit credentials with service='name'."""
+        result = datasource_content
+        service_name = params_to_change.get('service', '')
+        
+        if not service_name:
+            return result
+        
+        # Remove explicit connection parameters
+        for param in ['host', 'dbname', 'port', 'user', 'password']:
+            # Remove param='value' (with quotes)
+            result = re.sub(rf"\s*{param}='[^']*'", '', result)
+            result = re.sub(rf'\s*{param}="[^"]*"', '', result)
+            # Remove param=value (without quotes)
+            result = re.sub(rf"\s*{param}=[^\s'\"]+", '', result)
+        
+        # Add or replace service parameter
+        if 'service' in original_params:
+            # Replace existing service
+            result = re.sub(r"service='[^']*'", f"service='{service_name}'", result)
+            result = re.sub(r'service="[^"]*"', f"service='{service_name}'", result)
+            result = re.sub(r"service=[^\s'\"]+", f"service='{service_name}'", result)
+        else:
+            # Prepend service= at the beginning of the datasource string
+            result = f"service='{service_name}' {result.strip()}"
+        
+        # Handle schema remapping (same logic as explicit mode)
+        result = self._apply_schema_changes(result, original_params, params_to_change)
+        
+        # Clean up whitespace
+        result = re.sub(r'\s+', ' ', result).strip()
+        
+        return result
+    
+    def _apply_explicit_mode(self, datasource_content, original_params, params_to_change):
+        """Apply explicit mode: update individual parameters, remove service= if explicit params given."""
+        new_params_dict = original_params.copy()
+        datasource_changed = False
+        result = datasource_content
+        
+        # If we're providing explicit connection params, remove service=
+        explicit_conn_params = [k for k in params_to_change if k in ('host', 'dbname', 'port', 'user', 'password')]
+        if explicit_conn_params and 'service' in original_params:
+            result = re.sub(r"\s*service='[^']*'", '', result)
+            result = re.sub(r'\s*service="[^"]*"', '', result)
+            result = re.sub(r"\s*service=[^\s'\"]+", '', result)
+            datasource_changed = True
+        
+        # Apply parameter changes
+        for param in ['dbname', 'host', 'port', 'user', 'password']:
+            if param in params_to_change:
+                new_value = params_to_change[param]
+                if param in original_params:
+                    # Replace existing
+                    new_params_dict[param] = new_value
+                    datasource_changed = True
+                elif 'service' in original_params or datasource_changed:
+                    # Adding new param when switching from service to explicit
+                    # Find a good position: before key= or table=
+                    insert_patterns = ['key=', 'table=', 'srid=', 'type=']
+                    inserted = False
+                    for ip in insert_patterns:
+                        if ip in result:
+                            result = result.replace(ip, f"{param}='{new_value}' {ip}", 1)
+                            inserted = True
+                            break
+                    if not inserted:
+                        result = f"{param}='{new_value}' {result.strip()}"
+                    datasource_changed = True
+        
+        # If we changed existing params, rebuild via the replacement approach
+        if datasource_changed:
+            result = self._rebuild_datasource_simple(result, new_params_dict)
+        
+        # Handle schema changes
+        result = self._apply_schema_changes(result, original_params, params_to_change)
+        if result != datasource_content:
+            datasource_changed = True
+        
+        # Clean up whitespace
+        result = re.sub(r'\s+', ' ', result).strip()
+        
+        return result if datasource_changed else datasource_content
+    
+    def _apply_schema_changes(self, datasource_content, original_params, params_to_change):
+        """Apply schema changes to a datasource string."""
+        result = datasource_content
+        
+        if 'schema' in params_to_change and 'table' in original_params:
+            table_value = original_params['table']
+            new_schema = params_to_change['schema']
+            if '.' in table_value:
+                if table_value.startswith('"'):
+                    parts = table_value.split('"."', 1)
+                    if len(parts) == 2:
+                        old_table = f'{parts[0]}"."{parts[1]}'
+                        new_table = f'"{new_schema}"."{parts[1]}'
+                        result = result.replace(old_table, new_table)
+                else:
+                    parts = table_value.split('.', 1)
+                    if len(parts) == 2:
+                        result = result.replace(
+                            f'{parts[0]}.{parts[1]}',
+                            f'{new_schema}.{parts[1]}'
+                        )
+        
+        if 'schema_remapping' in params_to_change and 'table' in original_params:
+            remap = params_to_change['schema_remapping']
+            table_value = original_params['table']
+            source = remap['source']
+            target = remap['target']
+            
+            if table_value.startswith('"'):
+                if f'"{source}".' in table_value:
+                    result = result.replace(f'"{source}".', f'"{target}".')
+            else:
+                if f'{source}.' in table_value:
+                    result = result.replace(f'{source}.', f'{target}.')
+        
+        return result
+    
+    def _update_source_attributes(self, content, new_params, mode):
+        """Update source= attributes in XML elements (layer-tree-layer, GPS settings, etc.)."""
+        # These attributes use &quot; for quotes inside attribute values
+        source_attr_pattern = r'(source|destinationLayerSource)="([^"]*)"'
+        
+        def replace_source_attr(match):
+            attr_name = match.group(1)
+            attr_value = match.group(2)
+            
+            # Only process PostgreSQL sources (contain service= or dbname=)
+            if 'service=' not in attr_value and 'dbname=' not in attr_value:
+                return match.group(0)
+            
+            # Decode &quot; to " for processing
+            decoded = attr_value.replace('&quot;', '"')
+            
+            original_params = self._parse_datasource_simple(decoded)
+            
+            if mode == 'service':
+                modified = self._apply_service_mode(decoded, original_params, 
+                    {k: v for k, v in new_params.items() if not k.startswith('_')})
+            else:
+                modified = self._apply_explicit_mode(decoded, original_params,
+                    {k: v for k, v in new_params.items() if not k.startswith('_')})
+            
+            if modified != decoded:
+                # Re-encode " to &quot; for XML attribute
+                encoded = modified.replace('"', '&quot;')
+                return f'{attr_name}="{encoded}"'
+            
+            return match.group(0)
+        
+        return re.sub(source_attr_pattern, replace_source_attr, content)
     
     def _parse_datasource_simple(self, datasource_content):
         """Simple parser to extract key=value pairs from datasource string."""
@@ -913,7 +1037,7 @@ class DatabaseManager(QObject):
             return True
             
         except psycopg2.Error as e:
-            self.log_message(f"Error uploading project content: {str(e)}", Qgis.Critical)
+            self.log_message(f"Error uploading project content: {str(e)}", MessageCritical)
             return False
 
     def get_active_connections(self, database_name):
@@ -950,14 +1074,14 @@ class DatabaseManager(QObject):
                 return connections
                 
             except psycopg2.Error as db_error:
-                self.log_message(f"Database error getting active connections: {str(db_error)}", Qgis.Critical)
+                self.log_message(f"Database error getting active connections: {str(db_error)}", MessageCritical)
                 return []
             finally:
                 cursor.close()
                 conn.close()
             
         except psycopg2.Error as e:
-            self.log_message(f"Error getting active connections: {str(e)}", Qgis.Critical)
+            self.log_message(f"Error getting active connections: {str(e)}", MessageCritical)
             return []
 
     def get_connection_count(self, database_name):
@@ -985,14 +1109,14 @@ class DatabaseManager(QObject):
                 return count
                 
             except psycopg2.Error as db_error:
-                self.log_message(f"Database error getting connection count: {str(db_error)}", Qgis.Critical)
+                self.log_message(f"Database error getting connection count: {str(db_error)}", MessageCritical)
                 return 0
             finally:
                 cursor.close()
                 conn.close()
             
         except psycopg2.Error as e:
-            self.log_message(f"Error getting connection count: {str(e)}", Qgis.Critical)
+            self.log_message(f"Error getting connection count: {str(e)}", MessageCritical)
             return 0
 
     def drop_database_connections(self, database_name):
@@ -1016,7 +1140,7 @@ class DatabaseManager(QObject):
                 # Log connection details
                 for conn_info in connections:
                     pid, username, client_addr, client_hostname, client_port, backend_start, state, query = conn_info
-                    self.log_message(f"Dropping connection: PID={pid}, User={username}, Client={client_addr or client_hostname}", Qgis.Info)
+                    self.log_message(f"Dropping connection: PID={pid}, User={username}, Client={client_addr or client_hostname}", MessageInfo)
             
             # Drop all connections to the database (excluding our own)
             terminate_query = """
@@ -1040,7 +1164,7 @@ class DatabaseManager(QObject):
             
         except psycopg2.Error as e:
             error_msg = f"Error dropping database connections: {str(e)}"
-            self.log_message(error_msg, Qgis.Critical)
+            self.log_message(error_msg, MessageCritical)
             self.progress_updated.emit(error_msg)
             return False
 
@@ -1149,7 +1273,7 @@ class DatabaseManager(QObject):
                     self.progress_updated.emit(f"Cleared data from {schema}.{table}")
                     truncated_count += 1
                 except psycopg2.Error as e:
-                    self.log_message(f"Warning: Could not truncate {schema}.{table}: {str(e)}", Qgis.Warning)
+                    self.log_message(f"Warning: Could not truncate {schema}.{table}: {str(e)}", MessageWarning)
             
             template_cursor.close()
             template_conn.close()
@@ -1174,7 +1298,7 @@ class DatabaseManager(QObject):
             
         except psycopg2.Error as e:
             error_msg = f"Error creating template: {str(e)}"
-            self.log_message(error_msg, Qgis.Critical)
+            self.log_message(error_msg, MessageCritical)
             self.operation_finished.emit(False, error_msg)
             return False
     
@@ -1237,7 +1361,7 @@ class DatabaseManager(QObject):
             
         except psycopg2.Error as e:
             error_msg = f"Error creating database: {str(e)}"
-            self.log_message(error_msg, Qgis.Critical)
+            self.log_message(error_msg, MessageCritical)
             self.operation_finished.emit(False, error_msg)
             return False    
 
@@ -1269,7 +1393,7 @@ class DatabaseManager(QObject):
             
         except psycopg2.Error as e:
             error_msg = f"Error deleting template: {str(e)}"
-            self.log_message(error_msg, Qgis.Critical)
+            self.log_message(error_msg, MessageCritical)
             self.operation_finished.emit(False, error_msg)
             return False
 
@@ -1304,14 +1428,14 @@ class DatabaseManager(QObject):
                 return templates
                 
             except psycopg2.Error as db_error:
-                self.log_message(f"Database error getting templates with comments: {str(db_error)}", Qgis.Critical)
+                self.log_message(f"Database error getting templates with comments: {str(db_error)}", MessageCritical)
                 return []
             finally:
                 cursor.close()
                 conn.close()
             
         except psycopg2.Error as e:
-            self.log_message(f"Error getting templates with comments: {str(e)}", Qgis.Critical)
+            self.log_message(f"Error getting templates with comments: {str(e)}", MessageCritical)
             return []
 
     def get_database_comment(self, db_name):
@@ -1336,14 +1460,14 @@ class DatabaseManager(QObject):
                 return result[0] if result and len(result) > 0 else None
                 
             except psycopg2.Error as db_error:
-                self.log_message(f"Database error getting database comment: {str(db_error)}", Qgis.Critical)
+                self.log_message(f"Database error getting database comment: {str(db_error)}", MessageCritical)
                 return None
             finally:
                 cursor.close()
                 conn.close()
             
         except psycopg2.Error as e:
-            self.log_message(f"Error getting database comment: {str(e)}", Qgis.Critical)
+            self.log_message(f"Error getting database comment: {str(e)}", MessageCritical)
             return None
         
     def get_databases_with_comments(self):
@@ -1377,14 +1501,14 @@ class DatabaseManager(QObject):
                 return databases
                 
             except psycopg2.Error as db_error:
-                self.log_message(f"Database error getting databases with comments: {str(db_error)}", Qgis.Critical)
+                self.log_message(f"Database error getting databases with comments: {str(db_error)}", MessageCritical)
                 return []
             finally:
                 cursor.close()
                 conn.close()
             
         except psycopg2.Error as e:
-            self.log_message(f"Error getting databases with comments: {str(e)}", Qgis.Critical)
+            self.log_message(f"Error getting databases with comments: {str(e)}", MessageCritical)
             return []
         
     def create_database_from_database(self, source_db_name, new_db_name, db_comment=None):
@@ -1446,7 +1570,7 @@ class DatabaseManager(QObject):
             
         except psycopg2.Error as e:
             error_msg = f"Error creating database from existing database: {str(e)}"
-            self.log_message(error_msg, Qgis.Critical)
+            self.log_message(error_msg, MessageCritical)
             self.operation_finished.emit(False, error_msg)
             return False
         
@@ -1454,7 +1578,7 @@ class DatabaseManager(QObject):
         """Get list of schemas in the specified database."""
         try:
             if not database_name or not isinstance(database_name, str):
-                self.log_message(f"Invalid database_name: {database_name}", Qgis.Critical)
+                self.log_message(f"Invalid database_name: {database_name}", MessageCritical)
                 return []
             
             conn_params = self.connection_params.copy()
@@ -1484,17 +1608,17 @@ class DatabaseManager(QObject):
                 return schemas
                 
             except psycopg2.Error as db_error:
-                self.log_message(f"Database error getting schemas for database '{database_name}': {str(db_error)}", Qgis.Critical)
+                self.log_message(f"Database error getting schemas for database '{database_name}': {str(db_error)}", MessageCritical)
                 return []
             finally:
                 cursor.close()
                 conn.close()
             
         except psycopg2.Error as e:
-            self.log_message(f"PostgreSQL error getting schemas for database '{database_name}': {str(e)}", Qgis.Critical)
+            self.log_message(f"PostgreSQL error getting schemas for database '{database_name}': {str(e)}", MessageCritical)
             return []
         except Exception as e:
-            self.log_message(f"Unexpected error getting schemas for database '{database_name}': {str(e)}", Qgis.Critical)
+            self.log_message(f"Unexpected error getting schemas for database '{database_name}': {str(e)}", MessageCritical)
             return []
 
 
@@ -1503,11 +1627,11 @@ class DatabaseManager(QObject):
         try:
             # Validate inputs
             if not database_name or not isinstance(database_name, str):
-                self.log_message(f"Invalid database_name: {database_name}", Qgis.Critical)
+                self.log_message(f"Invalid database_name: {database_name}", MessageCritical)
                 return []
             
             if not schema_name or not isinstance(schema_name, str):
-                self.log_message(f"Invalid schema_name: {schema_name}", Qgis.Critical)
+                self.log_message(f"Invalid schema_name: {schema_name}", MessageCritical)
                 return []
             
             self.progress_updated.emit(f"Getting tables for schema '{schema_name}' in database '{database_name}'...")
@@ -1531,7 +1655,7 @@ class DatabaseManager(QObject):
                 
                 # Check if schema exists
                 if schema_result is None:
-                    self.log_message(f"Schema '{schema_name}' does not exist in database '{database_name}'", Qgis.Warning)
+                    self.log_message(f"Schema '{schema_name}' does not exist in database '{database_name}'", MessageWarning)
                     return []
                 
                 # Use string formatting approach (safe because we validated schema_name)
@@ -1559,24 +1683,24 @@ class DatabaseManager(QObject):
                 return tables
                 
             except psycopg2.Error as db_error:
-                self.log_message(f"Database error getting tables for schema '{schema_name}': {str(db_error)}", Qgis.Critical)
+                self.log_message(f"Database error getting tables for schema '{schema_name}': {str(db_error)}", MessageCritical)
                 return []
             finally:
                 cursor.close()
                 conn.close()
             
         except psycopg2.Error as e:
-            self.log_message(f"PostgreSQL error getting tables for schema '{schema_name}' in database '{database_name}': {str(e)}", Qgis.Critical)
+            self.log_message(f"PostgreSQL error getting tables for schema '{schema_name}' in database '{database_name}': {str(e)}", MessageCritical)
             return []
         except Exception as e:
-            self.log_message(f"Unexpected error getting tables for schema '{schema_name}' in database '{database_name}': {str(e)}", Qgis.Critical)
+            self.log_message(f"Unexpected error getting tables for schema '{schema_name}' in database '{database_name}': {str(e)}", MessageCritical)
             return []
 
     def get_database_tables(self, database_name):
         """Get list of tables in the specified database (fallback method)."""
         try:
             if not database_name or not isinstance(database_name, str):
-                self.log_message(f"Invalid database_name: {database_name}", Qgis.Critical)
+                self.log_message(f"Invalid database_name: {database_name}", MessageCritical)
                 return []
             
             conn_params = self.connection_params.copy()
@@ -1605,17 +1729,17 @@ class DatabaseManager(QObject):
                 return tables
                 
             except psycopg2.Error as db_error:
-                self.log_message(f"Database error getting tables for database '{database_name}': {str(db_error)}", Qgis.Critical)
+                self.log_message(f"Database error getting tables for database '{database_name}': {str(db_error)}", MessageCritical)
                 return []
             finally:
                 cursor.close()
                 conn.close()
             
         except psycopg2.Error as e:
-            self.log_message(f"PostgreSQL error getting tables for database '{database_name}': {str(e)}", Qgis.Critical)
+            self.log_message(f"PostgreSQL error getting tables for database '{database_name}': {str(e)}", MessageCritical)
             return []
         except Exception as e:
-            self.log_message(f"Unexpected error getting tables for database '{database_name}': {str(e)}", Qgis.Critical)
+            self.log_message(f"Unexpected error getting tables for database '{database_name}': {str(e)}", MessageCritical)
             return []
 
     def truncate_schema_tables(self, database_name, schema_name, table_names):
@@ -1643,7 +1767,7 @@ class DatabaseManager(QObject):
                         
                     except psycopg2.Error as table_error:
                         failed_tables.append(table_name)
-                        self.log_message(f"Failed to truncate {schema_name}.{table_name}: {str(table_error)}", Qgis.Warning)
+                        self.log_message(f"Failed to truncate {schema_name}.{table_name}: {str(table_error)}", MessageWarning)
                         self.progress_updated.emit(f"Failed to truncate: {schema_name}.{table_name} - {str(table_error)}")
                 
                 # Prepare result message
@@ -1662,7 +1786,7 @@ class DatabaseManager(QObject):
                     
             except psycopg2.Error as db_error:
                 error_msg = f"Database error truncating tables in schema '{schema_name}': {str(db_error)}"
-                self.log_message(error_msg, Qgis.Critical)
+                self.log_message(error_msg, MessageCritical)
                 self.operation_finished.emit(False, error_msg)
                 return False
             finally:
@@ -1671,6 +1795,6 @@ class DatabaseManager(QObject):
             
         except psycopg2.Error as e:
             error_msg = f"Error truncating tables in schema '{schema_name}': {str(e)}"
-            self.log_message(error_msg, Qgis.Critical)
+            self.log_message(error_msg, MessageCritical)
             self.operation_finished.emit(False, error_msg)
             return False

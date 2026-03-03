@@ -4,6 +4,7 @@ Base tab class with common functionality for PostgreSQL Template Manager tabs.
 
 from qgis.PyQt.QtCore import QObject, pyqtSignal
 from qgis.PyQt.QtWidgets import QWidget, QMessageBox
+from ..compat import MsgBoxNo, MsgBoxYes
 
 
 class BaseTab(QWidget):
@@ -51,8 +52,8 @@ class BaseTab(QWidget):
     def confirm_action(self, title, message):
         """Show confirmation dialog."""
         reply = QMessageBox.question(self, title, message,
-                                   QMessageBox.Yes | QMessageBox.No)
-        return reply == QMessageBox.Yes
+                                   MsgBoxYes | MsgBoxNo)
+        return reply == MsgBoxYes
     
     def emit_log(self, message):
         """Emit log message signal."""

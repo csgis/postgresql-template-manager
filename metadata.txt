@@ -1,8 +1,9 @@
 [general]
 name=KGR Toolbox
-qgisMinimumVersion=3.0
+qgisMinimumVersion=3.34
+qgisMaximumVersion=4.99
 description=Manage PostgreSQL database templates and create portable project archives - create templates from existing databases without data, create new databases from templates, and export projects with PostgreSQL layers as portable geopackage archives
-version=0.1
+version=0.2
 author=Toni Schönbuchner, CSGIS GbR. | Dr. Bernhard Fritsch, German Archaeological Institute
 email=toni.schoenbuchner@csgis.de
 about=A QGIS plugin for managing PostgreSQL database templates and creating portable project archives.

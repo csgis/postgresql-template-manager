@@ -11,6 +11,7 @@ from qgis.PyQt.QtWidgets import (QVBoxLayout, QHBoxLayout, QFormLayout,
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QFont
 from .base_tab import BaseTab
+from ..compat import ButtonNo, ButtonYes, DialogAccepted, ItemIsEditable, MsgBoxNo, MsgBoxOk, MsgBoxYes, ResizeToContents, RichText, SelectRows, SingleSelection
 
 
 class ConnectionWarningDialog(QDialog):
@@ -70,18 +71,18 @@ class ConnectionWarningDialog(QDialog):
         
         # Buttons
         button_box = QDialogButtonBox(
-            QDialogButtonBox.Yes | QDialogButtonBox.No,
+            ButtonYes | ButtonNo,
             parent=self
         )
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
         
         # Style the buttons
-        yes_button = button_box.button(QDialogButtonBox.Yes)
+        yes_button = button_box.button(ButtonYes)
         yes_button.setText("Yes, Drop Connections and Create Template")
         yes_button.setStyleSheet("QPushButton { background-color: #d32f2f; color: white; padding: 5px; }")
         
-        no_button = button_box.button(QDialogButtonBox.No)
+        no_button = button_box.button(ButtonNo)
         no_button.setText("Cancel")
         no_button.setStyleSheet("QPushButton { padding: 5px; }")
         
@@ -182,10 +183,10 @@ class TemplatesTab(BaseTab):
         self.templates_table = QTableWidget()
         self.templates_table.setColumnCount(2)
         self.templates_table.setHorizontalHeaderLabels(["Template Name", "Comment"])
-        self.templates_table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.templates_table.setSelectionMode(QTableWidget.SingleSelection)
+        self.templates_table.setSelectionBehavior(SelectRows)
+        self.templates_table.setSelectionMode(SingleSelection)
         self.templates_table.horizontalHeader().setStretchLastSection(True)
-        self.templates_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.templates_table.horizontalHeader().setSectionResizeMode(0, ResizeToContents)
         self.templates_table.setSortingEnabled(True)
         list_layout.addWidget(self.templates_table)
         
@@ -228,10 +229,10 @@ class TemplatesTab(BaseTab):
         
         msg = QMessageBox(self)
         msg.setWindowTitle("Help - PostgreSQL Template Manager")
-        msg.setTextFormat(1)  # Rich text format
+        msg.setTextFormat(RichText)  # Rich text format
         msg.setText(help_text)
-        msg.setStandardButtons(QMessageBox.Ok)
-        msg.exec_()
+        msg.setStandardButtons(MsgBoxOk)
+        msg.exec()
     
     def connect_signals(self):
         """Connect signals."""
@@ -259,13 +260,13 @@ class TemplatesTab(BaseTab):
                 
                 # Template name item
                 name_item = QTableWidgetItem(template_name)
-                name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)  # Make read-only
+                name_item.setFlags(name_item.flags() & ~ItemIsEditable)  # Make read-only
                 self.templates_table.setItem(row, 0, name_item)
                 
                 # Comment item
                 comment_text = comment if comment else "(No comment)"
                 comment_item = QTableWidgetItem(comment_text)
-                comment_item.setFlags(comment_item.flags() & ~Qt.ItemIsEditable)  # Make read-only
+                comment_item.setFlags(comment_item.flags() & ~ItemIsEditable)  # Make read-only
                 self.templates_table.setItem(row, 1, comment_item)
             
             self.emit_log(f"Refreshed templates: {len(templates_with_comments)} found")
@@ -322,7 +323,7 @@ class TemplatesTab(BaseTab):
                     self
                 )
                 
-                if dialog.exec_() != QDialog.Accepted:
+                if dialog.exec() != DialogAccepted:
                     self.emit_log("Template creation cancelled by user")
                     return
                 
@@ -349,11 +350,11 @@ class TemplatesTab(BaseTab):
                     self,
                     "Create Template",
                     confirmation_text,
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No
+                    MsgBoxYes | MsgBoxNo,
+                    MsgBoxNo
                 )
                 
-                if reply != QMessageBox.Yes:
+                if reply != MsgBoxYes:
                     return
             
             # Proceed with template creation
