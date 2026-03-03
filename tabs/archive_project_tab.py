@@ -8,7 +8,11 @@ import re
 import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from PIL import Image, ImageOps
+try:
+    from PIL import Image, ImageOps
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
 from qgis.PyQt.QtCore import pyqtSignal, Qt
 from qgis.PyQt.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit, QPushButton,
@@ -82,6 +86,13 @@ class ArchiveProjectTab(BaseTab):
         self.resize_images_checkbox = QCheckBox("Resize images")
         self.resize_images_checkbox.setStyleSheet("font-weight: bold;")
         self.resize_images_checkbox.toggled.connect(self._on_resize_checkbox_toggled)
+        if not HAS_PIL:
+            self.resize_images_checkbox.setEnabled(False)
+            self.resize_images_checkbox.setToolTip(
+                "Pillow (PIL) is not installed. Install with:\n"
+                "  pip install Pillow\n"
+                "or in the OSGeo4W shell:\n"
+                "  python -m pip install Pillow")
         image_group.addWidget(self.resize_images_checkbox)
         
         # Pixel size input
@@ -306,6 +317,11 @@ class ArchiveProjectTab(BaseTab):
 
     def _resize_images_in_folder(self, folder_path, max_long_side):
         """Resize all images in a folder if their long side exceeds max_long_side"""
+        if not HAS_PIL:
+            self.emit_log("Pillow (PIL) is not installed — skipping image resizing. "
+                         "Install with: pip install Pillow")
+            return 0
+        
         supported_formats = ('.jpg', '.jpeg', '.png', '.tiff', '.tif', '.bmp', '.webp')
         resized_count = 0
         
