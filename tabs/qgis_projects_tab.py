@@ -180,7 +180,11 @@ class QGISProjectsTab(BaseTab):
         """Show help information in a popup dialog."""
         help_text = (
             "<h3>QGIS Project Layer Updater</h3>"
-            "<p>This tool updates PostgreSQL connection parameters in QGIS project files.</p>"
+            "<p>This tool <b>changes the database connection</b> of PostgreSQL layers in a QGIS "
+            "project &mdash; use it to re-point layers to another database, switch them to a "
+            "named service, or remap schemas.</p>"
+            "<p><i>Looking to strip out credentials before sharing a project? Use the "
+            "<b>QGS File Credential Cleaner</b> tab instead.</i></p>"
             "<h4>Service Mode:</h4>"
             "<ul>"
             "<li><b>Service Name filled:</b> replaces host, port, dbname, user and password "

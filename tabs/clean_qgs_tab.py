@@ -86,9 +86,18 @@ class CleanQGSTab(BaseTab):
         self.remove_password_checkbox = QCheckBox("Remove password credentials")
         self.remove_password_checkbox.setChecked(True)
         self.remove_password_checkbox.setToolTip("Remove 'password' parameter from datasource connections")
-        
+
+        self.remove_service_checkbox = QCheckBox("Remove service references")
+        self.remove_service_checkbox.setChecked(False)
+        self.remove_service_checkbox.setToolTip(
+            "Remove the service='name' parameter from datasource connections.\n"
+            "Use this to strip the named pg_service reference from the project file.\n"
+            "Note: layers will then have no usable connection until parameters are re-added."
+        )
+
         options_layout.addWidget(self.remove_user_checkbox)
         options_layout.addWidget(self.remove_password_checkbox)
+        options_layout.addWidget(self.remove_service_checkbox)
         
         layout.addWidget(options_section)
         
@@ -234,25 +243,38 @@ class CleanQGSTab(BaseTab):
         """Show help information in a popup dialog."""
         help_text = (
             "<h3>QGS File Credential Cleaner</h3>"
-            "<p>This tool removes database credentials (user/password) from QGIS project files "
-            "and PostgreSQL service configuration files.</p>"
+            "<p>This tool <b>strips sensitive connection information</b> out of files so they "
+            "can be shared or committed safely. It does <b>not</b> re-point layers to another "
+            "database &mdash; for changing connection parameters or switching to a service, "
+            "use the <i>QGIS Project Layer Updater</i> tab instead.</p>"
+            "<p>Two independent sections: the <b>QGS/QGZ file</b> cleans layer connections inside "
+            "the project; the <b>pg_service.conf</b> section cleans the service file itself.</p>"
             "<h4>QGS/QGZ Cleaning:</h4>"
             "<ul>"
             "<li>Scans the QGS/QGZ file for PostgreSQL datasource connections</li>"
             "<li>Shows a table preview of what will be changed</li>"
-            "<li>Removes user and/or password parameters from connection strings</li>"
-            "<li>Creates a cleaned version with '_cleaned' suffix</li>"
-            "<li>Original file remains untouched</li>"
+            "<li><b>Remove user credentials:</b> deletes <code>user='...'</code></li>"
+            "<li><b>Remove password credentials:</b> deletes <code>password='...'</code></li>"
+            "<li><b>Remove service references:</b> deletes the <code>service='name'</code> "
+            "reference from layer connections (off by default)</li>"
+            "<li>Creates a cleaned version with '_cleaned' suffix; original stays untouched</li>"
             "</ul>"
-            "<h4>Example:</h4>"
-            "<p><b>Before:</b> dbname='mydb' host=localhost user='admin' password='secret'</p>"
-            "<p><b>After:</b> dbname='mydb' host=localhost</p>"
+            "<h4>Examples:</h4>"
+            "<p><b>Before:</b> dbname='mydb' host=localhost user='admin' password='secret'<br>"
+            "<b>After (user + password):</b> dbname='mydb' host=localhost</p>"
+            "<p><b>Before:</b> service='production' key='id' table=&quot;public&quot;.&quot;roads&quot;<br>"
+            "<b>After (remove service):</b> key='id' table=&quot;public&quot;.&quot;roads&quot;</p>"
+            "<p><b>Note:</b> removing a service reference leaves the layer without a usable "
+            "connection until parameters are re-added. This is meant for sanitising a project "
+            "before sharing, not for live re-configuration.</p>"
             "<h4>PostgreSQL Service File (pg_service.conf):</h4>"
             "<ul>"
             "<li><b>Auto-detect:</b> Searches standard locations for pg_service.conf</li>"
             "<li><b>Preview:</b> Shows services and which credentials will be removed</li>"
             "<li><b>Clean:</b> Creates a cleaned copy with '_cleaned' suffix</li>"
-            "<li>Supports removing passwords and/or user entries from all services</li>"
+            "<li>Supports removing passwords and/or user entries from all services. "
+            "Service section headers and all other keys (host, port, dbname, ...) are kept "
+            "&mdash; whole service definitions are not deleted.</li>"
             "</ul>"
             "<h4>Standard pg_service.conf locations:</h4>"
             "<ul>"
@@ -402,7 +424,7 @@ class CleanQGSTab(BaseTab):
             self.file_cleaned.emit(cleaned_path)
             
             success_msg = (f"✓ File cleaned successfully!\n"
-                          f"• Removed {changes_count} credential(s)\n"
+                          f"• Removed {changes_count} item(s) (credentials / service references)\n"
                           f"• Original file preserved\n"
                           f"• Saved to: {os.path.basename(cleaned_path)}")
             
@@ -461,13 +483,14 @@ class CleanQGSTab(BaseTab):
         changes = []
         found_connections = set()  # To avoid duplicates
         
-        # Pattern to find all PostgreSQL connection strings (containing dbname=)
-        # This covers quoted strings, attribute values, and various formats
+        # Pattern to find all PostgreSQL connection strings.
+        # A PostgreSQL datasource is identified by either dbname= (explicit)
+        # or service= (named service reference).
         patterns = [
-            r'"[^"]*dbname=[^"]*"',     # Double-quoted strings
-            r"'[^']*dbname=[^']*'",     # Single-quoted strings  
-            r'(?:value|source|dataSource|destinationLayerSource)="([^"]*dbname=[^"]*)"',  # Attribute values
-            r"(?:value|source|dataSource|destinationLayerSource)='([^']*dbname=[^']*)'",  # Single-quoted attribute values
+            r'"[^"]*(?:dbname=|service=)[^"]*"',     # Double-quoted strings
+            r"'[^']*(?:dbname=|service=)[^']*'",     # Single-quoted strings
+            r'(?:value|source|dataSource|destinationLayerSource)="([^"]*(?:dbname=|service=)[^"]*)"',  # Attribute values
+            r"(?:value|source|dataSource|destinationLayerSource)='([^']*(?:dbname=|service=)[^']*)'",  # Single-quoted attribute values
         ]
         
         for pattern in patterns:
@@ -529,17 +552,35 @@ class CleanQGSTab(BaseTab):
             # Handle isolated password= (no surrounding spaces)
             cleaned_content = re.sub(r'password=[\'"][^\'\"]*[\'"]', '', cleaned_content)
             cleaned_content = re.sub(r'password=[^\s]+', '', cleaned_content)
-                
+
+        # Global removal of service references
+        if self.remove_service_checkbox.isChecked():
+            # Count service references before removing them
+            service_matches = re.findall(r'service=[\'"][^\'\"]*[\'"]|service=[^\s]+', cleaned_content)
+            changes_count += len(service_matches)
+
+            # Remove service references (being very careful about spaces)
+            # Handle space + service= (most common case)
+            cleaned_content = re.sub(r'\s+service=[\'"][^\'\"]*[\'"]', '', cleaned_content)
+            cleaned_content = re.sub(r'\s+service=[^\s]+', '', cleaned_content)
+            # Handle service= + space (when service is first parameter)
+            cleaned_content = re.sub(r'service=[\'"][^\'\"]*[\'"]\s+', '', cleaned_content)
+            cleaned_content = re.sub(r'service=[^\s]+\s+', '', cleaned_content)
+            # Handle isolated service= (no surrounding spaces)
+            cleaned_content = re.sub(r'service=[\'"][^\'\"]*[\'"]', '', cleaned_content)
+            cleaned_content = re.sub(r'service=[^\s]+', '', cleaned_content)
+
         return cleaned_content, changes_count
     
     def _has_postgres_credentials(self, datasource):
-        """Check if datasource has PostgreSQL credentials."""
-        # Must have dbname= (indicates PostgreSQL) and credentials we want to remove
-        has_dbname = 'dbname=' in datasource
+        """Check if datasource has PostgreSQL credentials/references to remove."""
+        # A PostgreSQL datasource has either dbname= (explicit) or service= (named).
+        is_postgres = 'dbname=' in datasource or 'service=' in datasource
         has_user = 'user=' in datasource and self.remove_user_checkbox.isChecked()
         has_password = 'password=' in datasource and self.remove_password_checkbox.isChecked()
-        
-        return has_dbname and (has_user or has_password)
+        has_service = 'service=' in datasource and self.remove_service_checkbox.isChecked()
+
+        return is_postgres and (has_user or has_password or has_service)
     
     def _clean_single_datasource(self, datasource):
         """Clean a single datasource string."""
@@ -553,7 +594,11 @@ class CleanQGSTab(BaseTab):
         if self.remove_password_checkbox.isChecked():
             cleaned = re.sub(r'\s*password=[\'"][^\'\"]*[\'"]', '', cleaned)
             cleaned = re.sub(r'\s*password=[^\s]+', '', cleaned)
-        
+
+        if self.remove_service_checkbox.isChecked():
+            cleaned = re.sub(r'\s*service=[\'"][^\'\"]*[\'"]', '', cleaned)
+            cleaned = re.sub(r'\s*service=[^\s]+', '', cleaned)
+
         # Clean up any double spaces
         cleaned = re.sub(r'\s+', ' ', cleaned).strip()
         
